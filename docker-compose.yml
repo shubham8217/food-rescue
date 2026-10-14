@@ -1,0 +1,101 @@
+# FoodRescue - local stack.
+# Profiles: core (this build), search / pipeline (reserved for the next 50%), all.
+# `.env` sets COMPOSE_PROFILES=core so a plain `docker compose up` starts the core stack.
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-foodrescue}:${POSTGRES_PASSWORD:-foodrescue}@postgres:5432/${POSTGRES_DB:-foodrescue}
+  MONGO_URL: mongodb://mongo:27017
+  MONGO_DB: foodrescue
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-please-32-bytes-min}
+  INBOX_DIR: /data/inbox
+  API_INTERNAL_URL: http://127.0.0.1:8000
+  SIM_DIRECT_INGEST: ${SIM_DIRECT_INGEST:-true}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    profiles: [core, all]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-foodrescue}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-foodrescue}
+      POSTGRES_DB: ${POSTGRES_DB:-foodrescue}
+    ports: ["${POSTGRES_PORT:-5433}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-foodrescue}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    profiles: [core, all]
+    ports: ["${MONGO_PORT:-27017}:27017"]
+    volumes: [mongodata:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    profiles: [core, all]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: [core, all]
+    environment: *backend-env
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports: ["8000:8000"]
+    volumes:
+      - ./data/inbox:/data/inbox
+    depends_on:
+      postgres: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: [core, all]
+    environment: *backend-env
+    command: python -m app.worker.consumer
+    depends_on:
+      backend: {condition: service_healthy}
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    profiles: [core, all]
+    ports: ["5173:80"]
+    depends_on:
+      backend: {condition: service_healthy}
+
+  # ---- Reserved for the remaining 50% (not built yet) ----
+  # nifi:          profile [pipeline, all]  - watches ./data/inbox, posts to backend /ingest/batch
+  # airflow:       profile [pipeline, all]  - DAGs: delta snapshots, analytics refresh
+  # elasticsearch: profile [search, all]    - donation/NGO search index
+
+volumes:
+  pgdata:
+  mongodata:
