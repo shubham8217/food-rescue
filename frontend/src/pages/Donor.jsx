@@ -89,6 +89,7 @@ export default function Donor() {
                 <Steps status={d.status} />
               </div>
               {d.accepted_ngo_name && <div className="small">✅ Accepted by <b>{d.accepted_ngo_name}</b></div>}
+              {d.status === 'listed' && <div className="small muted">Finding NGOs within 15 km…</div>}
               {!d.accepted_ngo_name && d.match_count > 0 && <div className="small muted">{d.match_count} NGOs matched. Click to view</div>}
               {open === d.id && (
                 <table className="mini">

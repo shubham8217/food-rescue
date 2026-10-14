@@ -35,7 +35,7 @@ class UserOut(BaseModel):
 class DonationIn(BaseModel):
     food_type: str = Field(min_length=2, max_length=160)
     category: str
-    quantity_kg: float
+    quantity_kg: float = Field(gt=0, le=5000)
     expiry_time: datetime
     area: str
     lat: float | None = None
