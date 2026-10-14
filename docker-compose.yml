@@ -1,5 +1,5 @@
 # FoodRescue - local stack.
-# Profiles: core (this build), search / pipeline (reserved for the next 50%), all.
+# Profiles: core (this build), search / pipeline (reserved for upcoming components), all.
 # `.env` sets COMPOSE_PROFILES=core so a plain `docker compose up` starts the core stack.
 
 x-backend-env: &backend-env
@@ -91,7 +91,7 @@ services:
     depends_on:
       backend: {condition: service_healthy}
 
-  # ---- Reserved for the remaining 50% (not built yet) ----
+  # ---- Not built yet ----
   # nifi:          profile [pipeline, all]  - watches ./data/inbox, posts to backend /ingest/batch
   # airflow:       profile [pipeline, all]  - DAGs: delta snapshots, analytics refresh
   # elasticsearch: profile [search, all]    - donation/NGO search index

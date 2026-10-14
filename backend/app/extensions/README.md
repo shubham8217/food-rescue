@@ -1,4 +1,4 @@
-# Extension points (remaining 50% - NOT built yet)
+# Extension points (not built yet)
 
 | Future component | Where it plugs in |
 |---|---|
