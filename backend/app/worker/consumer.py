@@ -19,6 +19,7 @@ from app.utils import utcnow
 from datetime import timedelta
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s worker: %(message)s")
+logging.getLogger("pika").setLevel(logging.WARNING)
 log = logging.getLogger("worker")
 
 SWEEP_EVERY_S = 30

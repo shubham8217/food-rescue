@@ -19,7 +19,7 @@ def accept_match(db: Session, match_id: int, ngo_id: int | None = None, actor: s
     match = db.get(Match, match_id)
     if match is None or (ngo_id is not None and match.ngo_id != ngo_id):
         raise WorkflowError("Match not found", 404)
-    donation = db.scalar(select(Donation).where(Donation.id == match.donation_id).with_for_update())
+    donation = db.scalar(select(Donation).where(Donation.id == match.donation_id).with_for_update(of=Donation))
     if donation.status != S_MATCHED or match.status != "suggested":
         raise WorkflowError(f"Donation is already {donation.status}")
     if donation.expiry_time <= utcnow():
@@ -35,9 +35,9 @@ def accept_match(db: Session, match_id: int, ngo_id: int | None = None, actor: s
         other.status = "declined"
     donation.status, donation.status_changed_at = S_ACCEPTED, now
     donation.accepted_ngo_id = match.ngo_id
-    if request is not None:
+    if request is not None and not request.standing:  # standing needs never run out
         request.fulfilled_kg += donation.quantity_kg
-        if request.fulfilled_kg >= request.quantity_kg * 0.9 and not request.standing:
+        if request.fulfilled_kg >= request.quantity_kg * 0.9:
             request.status = "fulfilled"
     ngo = db.get(NGO, match.ngo_id)
     log_event(db, "accepted", f"{ngo.name} accepted donation #{donation.id} ({donation.quantity_kg:g}kg "
@@ -48,7 +48,7 @@ def accept_match(db: Session, match_id: int, ngo_id: int | None = None, actor: s
 
 
 def advance_status(db: Session, donation_id: int, new_status: str, ngo_id: int | None = None) -> Donation:
-    donation = db.scalar(select(Donation).where(Donation.id == donation_id).with_for_update())
+    donation = db.scalar(select(Donation).where(Donation.id == donation_id).with_for_update(of=Donation))
     if donation is None or (ngo_id is not None and donation.accepted_ngo_id != ngo_id):
         raise WorkflowError("Donation not found", 404)
     if new_status not in (S_PICKED_UP, S_DELIVERED):

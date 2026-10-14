@@ -12,6 +12,7 @@ from app.seed import seed
 from simulator.lifecycle import lifecycle_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.getLogger("pika").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

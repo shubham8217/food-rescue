@@ -160,3 +160,15 @@ def test_ngo_creates_request_and_it_is_validated(client, ngo):
                                                            "needed_by": iso(5)}).status_code == 422
     assert client.post("/ngo/requests", headers=ngo, json={"quantity_kg": -1, "needed_by": iso(5)}).status_code == 422
     assert client.post("/ngo/requests", headers=ngo, json={"quantity_kg": 5, "needed_by": iso(-1)}).status_code == 422
+
+
+def test_standing_needs_never_run_out(client, session, donor, ngo, published):
+    from app.models import Request
+    for _ in range(3):
+        did = client.post("/donations", headers=donor, json={"food_type": f"Batch {_}", "category": "bakery",
+                                                             "quantity_kg": 90, "expiry_time": iso(5), "area": "Nerul"}).json()["id"]
+        run_worker(published); published.clear()
+        m = client.get("/ngo/matches", headers=ngo).json()[0]
+        assert client.post(f"/matches/{m['id']}/accept", headers=ngo).status_code == 200
+    session.expire_all()
+    assert all(r.fulfilled_kg == 0 for r in session.query(Request).filter_by(standing=True))
