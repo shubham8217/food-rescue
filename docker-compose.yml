@@ -82,7 +82,7 @@ services:
     ports: ["8000:8000"]
     volumes:
       - ./data/inbox:/data/inbox
-      - ./data/delta:/data/delta
+      - deltadata:/data/delta
     depends_on:
       postgres: {condition: service_healthy}
       mongo: {condition: service_healthy}
@@ -101,7 +101,7 @@ services:
     environment: *backend-env
     command: python -m app.worker.consumer
     volumes:
-      - ./data/delta:/data/delta
+      - deltadata:/data/delta
     depends_on:
       backend: {condition: service_healthy}
     restart: unless-stopped
@@ -198,3 +198,4 @@ volumes:
   mongodata:
   esdata:
   nifidata:
+  deltadata:

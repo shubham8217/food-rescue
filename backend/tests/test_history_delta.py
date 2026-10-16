@@ -83,3 +83,25 @@ def test_delta_can_be_disabled(client, donor, monkeypatch, published, tmp_path):
     client.post("/donations", headers=donor, json={"food_type": "Bread", "category": "bakery", "quantity_kg": 5,
                                                    "expiry_time": iso(5), "area": "Vashi"})
     assert not (tmp_path / "delta").exists()
+
+
+def _writer(delta_dir, start, n):
+    from app.config import settings as s
+    s.delta_dir = delta_dir
+    for i in range(start, start + n):
+        history.record_status(i, "a", "b", note="mp")
+
+
+def test_concurrent_processes_do_not_corrupt_the_delta_log(tmp_path):
+    """Backend and worker are separate processes writing the same volume: the write lock must serialise them."""
+    import multiprocessing as mp
+    ctx = mp.get_context("spawn")  # clean interpreters, like the real backend and worker containers
+    d = str(tmp_path / "shared")
+    procs = [ctx.Process(target=_writer, args=(d, k * 1000, 15)) for k in range(4)]
+    [p.start() for p in procs]
+    [p.join(120) for p in procs]
+    assert all(p.exitcode == 0 for p in procs)
+    df = pl.read_delta(f"{d}/status_events")
+    assert df.height == 60 and df["donation_id"].n_unique() == 60
+    from deltalake import DeltaTable
+    assert DeltaTable(f"{d}/status_events").version() == 59  # 60 commits, no gaps

@@ -1,7 +1,7 @@
 """Surplus forecast per area and hour, plus a history backfill so there is something to learn from.
 
 Model: for each (area, hour-of-day, IST) take a recency-weighted mean of kg donated over the history days
-(weight 0.85 ** age_in_days, zero-filled for hours with no donations), then scale by a mild recent-trend factor.
+(weight 0.85 ** age_in_days, zero-filled for hours with no donations, outliers capped at 3x the median for that hour).
 It is deliberately simple and explainable: lunch and dinner peaks come straight from the data.
 """
 import random
@@ -42,6 +42,11 @@ def forecast(db: Session, area: str | None = None, hours: int = 24, now: datetim
     full = grid.join(kg, on=["area", "day", "hour"], how="left").with_columns(
         pl.col("kg").fill_null(0.0), pl.col("n").fill_null(0)).with_columns(
         (pl.lit(DECAY) ** (pl.lit(today) - pl.col("day")).dt.total_days().cast(pl.Float64)).alias("w"))
+    # Robustness: one demo burst (dozens of donations in a single hour) must not distort the learned pattern.
+    # Each (area, day, hour) cell is capped at 3x the median of the same (area, hour) across days, plus a small floor.
+    full = full.with_columns(pl.col("n").cast(pl.Float64)).with_columns(
+        pl.min_horizontal(pl.col("kg"), pl.col("kg").median().over(["area", "hour"]) * 3 + 5).alias("kg"),
+        pl.min_horizontal(pl.col("n"), pl.col("n").median().over(["area", "hour"]) * 3 + 1).alias("n"))
     prof = full.group_by(["area", "hour"]).agg(
         ((pl.col("kg") * pl.col("w")).sum() / pl.col("w").sum()).alias("kg"),
         ((pl.col("n") * pl.col("w")).sum() / pl.col("w").sum()).alias("n"))

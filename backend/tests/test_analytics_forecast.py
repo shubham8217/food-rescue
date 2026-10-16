@@ -105,3 +105,20 @@ def test_analytics_requires_admin(client, donor, ngo):
         assert client.get(path, headers=donor).status_code == 403
         assert client.get(path, headers=ngo).status_code == 403
         assert client.get(path).status_code == 401
+
+
+def test_forecast_ignores_a_one_hour_demo_burst(client, session, admin):
+    """A burst of simulated donations in one hour must not dominate the learned hourly pattern."""
+    from datetime import datetime
+    seed_history(session, days=5)
+    before = client.get("/forecast?area=Nerul&hours=24", headers=admin).json()["points"]
+    donor_id = session.query(Donation.donor_id).first()[0]
+    now = datetime.utcnow()
+    for _ in range(150):
+        session.add(Donation(donor_id=donor_id, food_type="burst", category="cooked_meals", quantity_kg=50,
+                             expiry_time=now, lat=19.03, lng=73.03, area="Nerul", status="delivered", source="sim",
+                             created_at=now, status_changed_at=now))
+    session.commit()
+    after = client.get("/forecast?area=Nerul&hours=24", headers=admin).json()["points"]
+    worst = max(a["predicted_kg"] / max(b["predicted_kg"], 1) for a, b in zip(after, before))
+    assert worst < 2.5, f"burst inflated one hour {worst:.1f}x"

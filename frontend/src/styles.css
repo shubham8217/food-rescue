@@ -117,13 +117,14 @@ table.mini { margin-top: .5rem; }
 .charttip { position: absolute; top: 0; transform: translateX(-50%); background: #0f1a14; color: #fff; padding: .3rem .55rem; border-radius: 6px; font-size: .75rem; pointer-events: none; white-space: nowrap; }
 .chart-empty { padding: 2rem 0; text-align: center; }
 .hbars { display: flex; flex-direction: column; gap: .35rem; }
-.hbar { display: grid; grid-template-columns: 130px 1fr 70px; gap: .5rem; align-items: center; font-size: .85rem; }
+.hbar { display: grid; grid-template-columns: 170px 1fr 70px; gap: .5rem; align-items: center; font-size: .85rem; }
 .hbar .hl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbar .hb { background: #e6ece8; height: 12px; border-radius: 6px; overflow: hidden; }
 .hbar .hb i { display: block; height: 100%; border-radius: 6px; }
 .hbar .hv { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .funnel { display: flex; flex-direction: column; gap: .5rem; }
-.fstep { display: flex; flex-direction: column; gap: 2px; font-size: .8rem; color: var(--muted); text-transform: capitalize; }
+.fstep { display: flex; flex-direction: column; gap: 2px; font-size: .8rem; color: var(--muted); }
+.fstep .stage { text-transform: capitalize; color: var(--ink); }
 .fbar { color: #fff; padding: .35rem .6rem; border-radius: 8px; min-width: 38px; }
 
 .health-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; }
@@ -141,3 +142,11 @@ table.mini { margin-top: .5rem; }
 .legbtn { background: none; border: 0; cursor: pointer; font: inherit; font-size: .78rem; display: inline-flex; align-items: center; padding: 0; text-transform: capitalize; }
 .legbtn.off { opacity: .35; text-decoration: line-through; } .legbtn.static { cursor: default; }
 .legend i.sq { border-radius: 2px; background: #1d4ed8; }
+
+@media (max-width: 860px) {
+  .topbar { flex-wrap: wrap; gap: .5rem; padding: .6rem 1rem; }
+  .nav { order: 3; width: 100%; overflow-x: auto; }
+  .who { flex-wrap: wrap; }
+  .hbar { grid-template-columns: 110px 1fr 64px; }
+  .demo-main { flex-direction: column; align-items: flex-start; }
+}

@@ -6,12 +6,18 @@ All writes are best-effort: a Delta failure must never break ingestion or matchi
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from datetime import datetime
 
 import polars as pl
 
 from app.config import settings
 from app.utils import utcnow
+
+try:
+    import fcntl  # Linux containers; on other platforms writers are serialised per process only
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
@@ -25,11 +31,26 @@ def _path(name: str) -> str:
     return os.path.join(settings.delta_dir, name)
 
 
+@contextmanager
+def _write_lock():
+    """One writer at a time across threads AND processes (backend + worker share the volume).
+    Concurrent appends from two processes corrupt the Delta log on a plain filesystem."""
+    os.makedirs(settings.delta_dir, exist_ok=True)
+    with open(os.path.join(settings.delta_dir, ".write.lock"), "w") as lock:
+        if fcntl:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def _append(name: str, rows: list[dict]) -> None:
     if not rows:
         return
-    os.makedirs(settings.delta_dir, exist_ok=True)
-    pl.DataFrame(rows).write_delta(_path(name), mode="append")
+    with _write_lock():
+        pl.DataFrame(rows).write_delta(_path(name), mode="append")
 
 
 def record_donations(donations) -> None:
@@ -109,11 +130,12 @@ def optimize() -> dict:
     out = {}
     for name in (DONATIONS, STATUS):
         if _exists(name):
-            dt = DeltaTable(_path(name))
-            metrics = dt.optimize.compact()
-            dt.vacuum(retention_hours=0, enforce_retention_duration=False, dry_run=False)
-            out[name] = {"files_added": metrics.get("numFilesAdded"), "files_removed": metrics.get("numFilesRemoved"),
-                         "version": DeltaTable(_path(name)).version()}
+            with _write_lock():
+                dt = DeltaTable(_path(name))
+                metrics = dt.optimize.compact()
+                dt.vacuum(retention_hours=0, enforce_retention_duration=False, dry_run=False)
+                out[name] = {"files_added": metrics.get("numFilesAdded"), "files_removed": metrics.get("numFilesRemoved"),
+                             "version": DeltaTable(_path(name)).version()}
     return out
 
 

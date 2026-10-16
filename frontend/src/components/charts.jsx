@@ -1,5 +1,6 @@
 // Tiny dependency-free SVG charts (bar, line/area, funnel) that follow the app palette.
 import { useState } from 'react'
+import { STATUS_COLOR } from './bits.jsx'
 
 const GREEN = '#15803d'
 const COLORS = ['#15803d', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ef4444', '#64748b', '#14b8a6']
@@ -74,10 +75,10 @@ export function Funnel({ stages }) {
     <div className="funnel">
       {stages.map((s, i) => (
         <div key={s.stage} className="fstep">
-          <div className="fbar" style={{ width: `${Math.max((s.count / top) * 100, 4)}%`, background: COLORS[i % COLORS.length] }}>
+          <div className="fbar" style={{ width: `${Math.max((s.count / top) * 100, 4)}%`, background: STATUS_COLOR[s.stage] || COLORS[i % COLORS.length] }}>
             <b>{nf(s.count)}</b>
           </div>
-          <span>{s.stage.replace('_', ' ')}{i > 0 && stages[i - 1].count ? ` · ${Math.round((s.count / stages[i - 1].count) * 100)}% of previous` : ''}</span>
+          <span><b className="stage">{s.stage.replace('_', ' ')}</b>{i > 0 && stages[i - 1].count ? ` · ${Math.round((s.count / stages[i - 1].count) * 100)}% of previous` : ''}</span>
         </div>
       ))}
     </div>
