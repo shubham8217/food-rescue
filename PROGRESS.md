@@ -2,42 +2,43 @@
 
 ## ✅ Done
 
-| Feature | Details |
-|---|---|
-| Docker setup | `core` profile: postgres, mongo, rabbitmq, backend, worker, frontend (`docker-compose.yml`) |
-| Auth | JWT login, bcrypt, roles donor / ngo / admin, role guards on backend and frontend. Seed users: `donor@`, `ngo@`, `admin@foodrescue.demo` (password `demo123`) |
-| Data models | User, Donor, NGO, Donation, Request, Match, IngestBatch, RejectedRow (Alembic migration) |
-| Donation status flow | listed → matched → accepted → picked_up → delivered |
-| Ingestion | `POST /ingest/batch` (CSV / JSON / file upload); raw rows saved to MongoDB first |
-| Polars cleaning | required-field check, dedupe, category standardisation, expired / unsafe rejection; rejected rows stored with reason |
-| Events | clean data saved to PostgreSQL, then `donation.created` published to RabbitMQ |
-| Matching worker | 15 km haversine radius, expiry and food-type filters, score = 0.4 distance + 0.35 urgency + 0.25 quantity fit, top 5 saved |
-| Live demo simulator | admin start / stop, 1x / 2x / 5x; 20 batches (one per 30 s); 15–40 donations and 3–8 NGO needs per batch; ~10% dirty data; CSVs written to `data/inbox/` and sent to `/ingest/batch` (with fallback); simulated NGOs accept and deliver |
-| Frontend | Login; Donor (create donation, my donations); NGO (ranked matches, accept, pickup tracking, post need); Admin (live demo controls, counters, event log, rejected rows, Leaflet map); live updates via WebSocket with polling fallback |
-| Tests | 74 pytest tests: cleaning, matching, auth, ingest → match flow, simulator |
+| Area | What exists | Where |
+|---|---|---|
+| Docker setup | Profiles `core`, `pipeline`, `search`, `all`; health checks; one-command start | `docker-compose.yml`, `scripts/up-all.ps1` |
+| Auth | JWT + bcrypt; roles donor / ngo / admin; guards on API and pages; service key (`X-API-Key`) for NiFi and Airflow | `routers/auth.py`, `deps.py`, `frontend/src/auth.jsx` |
+| Data models | User, Donor, NGO, Donation, Request, Match, IngestBatch, RejectedRow, Event, AnalyticsSnapshot, QualityReport (Alembic 0001, 0002) | `models/`, `alembic/versions/` |
+| Status flow | listed → matched → accepted → picked_up → delivered (+ expired); NGOs can accept or decline | `services/workflow.py` |
+| Ingestion | `POST /ingest/batch` (JSON, CSV, file upload); raw rows saved to MongoDB first; donors can upload CSV from the UI | `routers/ingest.py`, `services/ingest.py` |
+| **Apache NiFi** | Flow built through the REST API: ListFile → FetchFile (archive) → InvokeHTTP → failed files saved | `nifi/deploy_flow.py`, compose `nifi`, `nifi-init` |
+| Polars cleaning | Required fields, dedupe (batch + database), categories, expired / unsafe rejection, coordinate fill; reasons stored | `services/cleaning.py` |
+| Events + matching | `donation.created` on RabbitMQ; worker: 15 km, expiry, category, score 0.4 / 0.35 / 0.25, top 5; sweeper self-heals | `services/matching.py`, `worker/consumer.py` |
+| **Delta Lake** | Versioned history of every donation and status change; time travel endpoint; compaction; cross-process write lock | `services/history.py`, `routers/history.py` |
+| **Airflow** | DAGs: expire stale (10 min), analytics snapshot (15 min), Delta compaction (hourly), data quality + reindex (daily) | `airflow/dags/`, `routers/ops.py` |
+| **DuckDB + Polars analytics** | Summary, by area / category, timeline, funnel, rejection reasons, top donors / NGOs | `services/analytics.py`, `routers/analytics.py` |
+| **Elasticsearch** | Indexing on create and on every status change, reindex, text / filter / distance search; NGO + admin search box | `services/search.py`, `routers/search.py`, `SearchBox.jsx` |
+| Forecasting | Recency-weighted surplus forecast by area and hour (outlier-capped) + history backfill | `services/forecast.py` |
+| Live demo simulator | Start / stop, 1x / 2x / 5x, 20 batches, ~10% dirty data, CSV to `data/inbox/` + direct API with fallback, simulated NGOs | `simulator/` |
+| Frontend | Login; Donor; NGO (matches, accept / decline, pickups, needs, search); Admin live demo; **Analytics** (charts, funnel, forecast); **Pipeline health**; map with clustering, match lines, NGO markers, filters, 15 km radius | `frontend/src/` |
+| Production setup | `docker-compose.prod.yml` (Caddy HTTPS, no host DB ports, mandatory secrets, resource limits, no demo accounts, simulator off), backups, CI | `docker-compose.prod.yml`, `deploy/`, `scripts/backup.*`, `.github/workflows/ci.yml` |
+| Docs | README (full setup), architecture diagram, ER diagram, demo script, screenshots | `README.md`, `docs/` |
+| Tests | About 120 backend tests: cleaning, matching, auth, ingest → match flow, simulator, Delta history (including multi-process writes), analytics, forecast, search, ops, health, production flags | `backend/tests/` |
 
-## ⏳ Remaining
-
-| Item | How to build |
-|---|---|
-| Apache NiFi | Watch `data/inbox/`, POST each CSV to `/ingest/batch`; set `SIM_DIRECT_INGEST=false` |
-| Delta Lake | Append donation / status history after each commit in `services/ingest.py` and `services/workflow.py` |
-| Airflow | DAGs for snapshots, analytics refresh, stale-donation expiry |
-| DuckDB + Polars analytics | Query Delta / Postgres; add `/analytics/*` endpoints and charts page |
-| Elasticsearch | Index donations / NGOs from the worker; add `/search` endpoint |
-| Pipeline-health page | Queue depth, batch throughput, reject rate, worker lag |
-| Map polish | Match lines, marker clustering |
-| Forecasting | Surplus forecast per area from history |
-| Deployment, final docs, diagram, demo script | Production compose, HTTPS, architecture diagram |
+## How it was verified
+* Backend test suite in Docker; frontend `npm run build` in the Docker image.
+* Core stack end to end: live demo at 5x, 20 batches, Delta history written by backend and worker together, analytics, forecast, health page.
+* Core + Elasticsearch + Airflow: reindex, text / geo / status search, live indexing during the demo, all four DAGs run successfully (Delta compaction removed small files, snapshot and quality report stored).
+* Core + NiFi: flow deployed by `nifi-init`, CSVs picked up from `data/inbox/`, archived, ingested through the API (see the NiFi section below for the exact check).
+* `docker-compose.prod.yml` is validated with `docker compose config`; its safety rules (weak secret refusal, no demo accounts, demo disabled) are covered by tests. The production stack itself was not run on a server.
 
 ## 🐞 Known limitations
-- Simulator runs inside one backend process (single uvicorn worker).
-- The demo NGO account takes part in the simulation; for a manual accept, create the donation while the demo is stopped.
-- Start Live Demo clears previous data unless the checkbox is unticked.
+- NiFi runs over plain HTTP without login and Airflow uses SQLite with the SequentialExecutor: fine for a local demo, not for production.
+- The whole stack with every profile at once needs roughly 8 GB of Docker memory and about 10 GB of free disk; each profile was verified separately on the development machine, which has little free disk.
+- Delta, Elasticsearch and MongoDB writes are best effort: if one is down, the pipeline continues but that store can miss data (use `POST /search/reindex` to rebuild search).
+- The simulator runs inside one backend process (single uvicorn worker); the demo NGO account also takes part in the simulation.
+- Start Live Demo clears previous donations unless the checkbox is unticked; backfilled history is kept.
+- The forecast is a simple explainable baseline learned from synthetic data, not a trained model.
+- The frontend has no automated unit tests; it is covered by the build in CI and by the screenshot script.
 - Map tiles need internet access.
 
-## 🎤 Demo steps
-1. Donor: list a donation, see it become *Matched* and open the 5 ranked NGOs.
-2. NGO: accept it, mark picked up, mark delivered.
-3. Admin: pick **Lunch rush**, press **▶ Start Live Demo**; show counters, map, event log, rejected rows, and `data/inbox/*.csv`.
-4. Open RabbitMQ UI (http://localhost:15672) to show the `donation.created` queue.
+## 🎤 Demo
+See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).

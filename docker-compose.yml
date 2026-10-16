@@ -120,6 +120,7 @@ services:
     profiles: [pipeline, all]
     environment:
       NIFI_WEB_HTTP_PORT: "8080"          # plain HTTP, local demo only
+      NIFI_WEB_HTTP_HOST: 0.0.0.0         # listen on every interface so the health check can use localhost
       NIFI_JVM_HEAP_INIT: 512m
       NIFI_JVM_HEAP_MAX: 768m
     ports: ["8080:8080"]

@@ -156,9 +156,14 @@ shot('12-airflow', async () => {
 
 shot('13-nifi', async () => {
   if (!(await reachable('http://localhost:8080/nifi-api/flow/about'))) return console.log('  skipped (NiFi not running)')
+  const groups = await (await fetch('http://localhost:8080/nifi-api/process-groups/root/process-groups')).json()
+  const gid = groups.processGroups?.[0]?.id
   const p = await page(1360, 800)
-  await p.goto('http://localhost:8080/nifi/')
+  await p.goto(`http://localhost:8080/nifi/${gid ? `?processGroupId=${gid}` : ''}`)
   await sleep(9000)
+  await p.mouse.click(269, 368)  // collapse the Operate and Navigate panels so the flow is fully visible
+  await p.mouse.click(269, 127)
+  await sleep(800)
   await save(p, '13-nifi-flow', false)
 })
 
