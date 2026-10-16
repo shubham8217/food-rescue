@@ -8,6 +8,20 @@ Donors list surplus food, the system finds the best nearby NGOs for it, and the 
 
 Screenshots are in [docs/screenshots](docs/screenshots). Deeper docs: [architecture](docs/architecture.md) · [database model](docs/er-diagram.md) · [demo script](docs/DEMO_SCRIPT.md) · [progress](PROGRESS.md).
 
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Login](docs/screenshots/01-login.png) **Login** | ![Donor](docs/screenshots/02-donor.png) **Donor**: listing, status steps, ranked NGOs |
+| ![NGO](docs/screenshots/03-ngo-matches.png) **NGO**: ranked matches, accept / decline | ![Search](docs/screenshots/04-ngo-search.png) **Search** (Elasticsearch) |
+| ![Live demo](docs/screenshots/05-admin-live-demo.png) **Admin live demo** | ![Map](docs/screenshots/06-map-clusters-and-match-lines.png) **Map**: clusters, match lines, NGOs |
+| ![Analytics](docs/screenshots/07-analytics.png) **Analytics** (DuckDB, forecast) | ![Pipeline health](docs/screenshots/08b-pipeline-health-with-nifi.png) **Pipeline health** |
+| ![NiFi](docs/screenshots/13-nifi-flow.png) **Apache NiFi** flow | ![Airflow](docs/screenshots/12-airflow-dags.png) **Apache Airflow** DAGs |
+| ![RabbitMQ](docs/screenshots/10-rabbitmq-queue.png) **RabbitMQ** queue | ![Swagger](docs/screenshots/09-swagger-api-docs.png) **API docs** |
+
+Regenerate them with `node scripts/capture_screenshots.mjs` (needs `npm i -D playwright` and a running stack).
+
 ## What it does
 
 - **Donors** list surplus food (or upload a CSV) and follow its status: listed → matched → accepted → picked up → delivered.

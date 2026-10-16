@@ -45,7 +45,7 @@ export default function SearchBox({ title = 'Search donations' }) {
                 <div className="item-head">
                   <div>
                     <b>{h.food_type}</b> <span className="muted">· {h.quantity_kg} kg · {label(h.category)}</span>
-                    <div className="muted small">{h.donor} · {h.area} · {timeLeft(h.expiry_time)}</div>
+                    <div className="muted small">{h.donor} · {h.area}{['listed', 'matched'].includes(h.status) ? ` · ${timeLeft(h.expiry_time)}` : ''}</div>
                   </div>
                   <Badge status={h.status} />
                 </div>

@@ -27,7 +27,7 @@
 * Backend test suite in Docker; frontend `npm run build` in the Docker image.
 * Core stack end to end: live demo at 5x, 20 batches, Delta history written by backend and worker together, analytics, forecast, health page.
 * Core + Elasticsearch + Airflow: reindex, text / geo / status search, live indexing during the demo, all four DAGs run successfully (Delta compaction removed small files, snapshot and quality report stored).
-* Core + NiFi: flow deployed by `nifi-init`, CSVs picked up from `data/inbox/`, archived, ingested through the API (see the NiFi section below for the exact check).
+* Core + NiFi: `nifi-init` deployed the flow (4 processors RUNNING and VALID); with the simulator in CSV-only mode, 8 CSV files were picked up from `data/inbox/`, archived to `data/archive/` and ingested through the API (8 batches with source `api`, 0 failed files, direct path unused); the NiFi canvas shows 20 files processed in a later run.
 * `docker-compose.prod.yml` is validated with `docker compose config`; its safety rules (weak secret refusal, no demo accounts, demo disabled) are covered by tests. The production stack itself was not run on a server.
 
 ## 🐞 Known limitations
