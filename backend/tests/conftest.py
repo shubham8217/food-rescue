@@ -10,6 +10,15 @@ from app.seed import seed
 from app.services import events, mongo
 
 
+@pytest.fixture(autouse=True)
+def isolated_stores(monkeypatch, tmp_path):
+    """Delta Lake writes into a temp dir; Elasticsearch stays disabled unless a test enables a fake."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "delta_dir", str(tmp_path / "delta"))
+    monkeypatch.setattr(settings, "elasticsearch_url", "")
+    monkeypatch.setattr(settings, "ingest_api_key", "test-service-key")
+
+
 @pytest.fixture()
 def published(monkeypatch):
     """Capture RabbitMQ publishes instead of needing a broker."""

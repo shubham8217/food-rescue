@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import io
 import json
 
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import ROLE_ADMIN, ROLE_DONOR
 from app.db import get_db
-from app.deps import donor_profile, require_roles
+from app.deps import admin_or_service, donor_profile
 from app.models import IngestBatch, RejectedRow, User
 from app.services import ingest
 
@@ -48,7 +48,7 @@ def _json_rows(payload) -> list[dict]:
 
 
 @router.post("/batch")
-async def ingest_batch(request: Request, user: User = Depends(require_roles(ROLE_ADMIN, ROLE_DONOR)),
+async def ingest_batch(request: Request, user: User = Depends(admin_or_service(ROLE_DONOR)),
                        db: Session = Depends(get_db)):
     rows, source, filename = await _read_rows(request)
     if not rows:
@@ -68,7 +68,7 @@ async def ingest_batch(request: Request, user: User = Depends(require_roles(ROLE
 
 
 @router.get("/batches")
-def batches(limit: int = 50, user: User = Depends(require_roles(ROLE_ADMIN)), db: Session = Depends(get_db)):
+def batches(limit: int = 50, user: User = Depends(admin_or_service()), db: Session = Depends(get_db)):
     rows = db.scalars(select(IngestBatch).order_by(IngestBatch.id.desc()).limit(min(limit, 200))).all()
     return [{"id": b.id, "source": b.source, "filename": b.filename, "total_rows": b.total_rows,
              "accepted_donations": b.accepted_donations, "accepted_requests": b.accepted_requests,
@@ -76,7 +76,7 @@ def batches(limit: int = 50, user: User = Depends(require_roles(ROLE_ADMIN)), db
 
 
 @router.get("/rejected")
-def rejected(batch_id: int | None = None, limit: int = 100, user: User = Depends(require_roles(ROLE_ADMIN)),
+def rejected(batch_id: int | None = None, limit: int = 100, user: User = Depends(admin_or_service()),
              db: Session = Depends(get_db)):
     q = select(RejectedRow).order_by(RejectedRow.id.desc()).limit(min(limit, 500))
     if batch_id:

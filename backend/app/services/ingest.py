@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import NGO, Donation, Donor, IngestBatch, RejectedRow, Request
-from app.services import events, mongo
+from app.services import events, history, mongo, search
 from app.services.cleaning import clean_records
 from app.utils import utcnow
 
@@ -141,6 +141,8 @@ def ingest_rows(db: Session, rows: list[dict], *, source: str, filename: str | N
         log.warning("RabbitMQ publish failed: %s", exc)
         events.log_event(db, "warning", f"RabbitMQ publish failed ({exc}); worker sweeper will pick these up")
         summary["publish_failed"] = True
+    history.record_donations(donations)  # Delta Lake (best effort)
+    search.index_donations(donations)  # Elasticsearch (best effort)
     try:
         if msgs:
             mongo.get_mongo().events.insert_many([dict(m) for m in msgs])

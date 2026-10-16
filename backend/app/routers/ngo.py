@@ -59,6 +59,12 @@ def accept(match_id: int, user: User = Depends(require_roles(ROLE_NGO, ROLE_ADMI
     return serialize(db, [d])[0]
 
 
+@router.post("/matches/{match_id}/decline", response_model=DonationOut)
+def decline(match_id: int, user: User = Depends(require_roles(ROLE_NGO)), db: Session = Depends(get_db)):
+    d = _wf(workflow.decline_match, db, match_id, _my_ngo(db, user).id)
+    return serialize(db, [d])[0]
+
+
 @router.patch("/donations/{donation_id}/status", response_model=DonationOut)
 def update_status(donation_id: int, body: StatusIn, user: User = Depends(require_roles(ROLE_NGO, ROLE_ADMIN)),
                   db: Session = Depends(get_db)):

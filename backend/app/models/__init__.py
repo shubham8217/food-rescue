@@ -133,3 +133,20 @@ class Event(Base):
     kind: Mapped[str] = mapped_column(String(40), index=True)
     message: Mapped[str] = mapped_column(Text)
     data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class AnalyticsSnapshot(Base):
+    """Periodic copy of the analytics summary (written by the Airflow analytics DAG)."""
+    __tablename__ = "analytics_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    kind: Mapped[str] = mapped_column(String(40), default="summary")
+    data: Mapped[dict] = mapped_column(JSON)
+
+
+class QualityReport(Base):
+    """Data-quality report (daily Airflow DAG): reject rates, duplicates, reasons."""
+    __tablename__ = "quality_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    data: Mapped[dict] = mapped_column(JSON)

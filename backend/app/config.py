@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     sim_direct_ingest: bool = True
     match_radius_km: float = 15.0
     cors_origins: str = "http://localhost:5173,http://localhost:5174"
+    app_env: str = "development"  # production refuses the default JWT secret
+    ingest_api_key: str = ""  # service key (X-API-Key) used by NiFi and Airflow
+    delta_dir: str = "data/delta"
+    delta_enabled: bool = True
+    elasticsearch_url: str = ""  # empty = search disabled
+    rabbitmq_api_url: str = "http://localhost:15672"
+    rabbitmq_api_user: str = "guest"
+    rabbitmq_api_password: str = "guest"
+    nifi_url: str = ""
+    airflow_url: str = ""
 
 
 settings = Settings()

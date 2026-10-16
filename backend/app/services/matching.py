@@ -19,6 +19,7 @@ from app.config import settings
 from app.constants import S_EXPIRED, S_LISTED, S_MATCHED
 from app.geo import haversine_km
 from app.models import NGO, Donation, Match, Request
+from app.services import history, search
 from app.services.events import log_event
 from app.utils import utcnow
 
@@ -112,8 +113,11 @@ def match_donation(db: Session, donation_id: int, now: datetime | None = None, l
         return []
     donation.match_attempts += 1
     if donation.expiry_time <= now:
+        old = donation.status
         donation.status, donation.status_changed_at = S_EXPIRED, now
         db.commit()
+        history.record_status(donation.id, old, S_EXPIRED, note="expired before match")
+        search.update_status(donation.id, S_EXPIRED)
         return []
 
     ranked = rank_candidates(
@@ -130,9 +134,13 @@ def match_donation(db: Session, donation_id: int, now: datetime | None = None, l
                   fit_score=s.fit_score, status="suggested")
         db.add(m)
         matches.append(m)
-    if matches and donation.status == S_LISTED:
+    became_matched = bool(matches) and donation.status == S_LISTED
+    if became_matched:
         donation.status, donation.status_changed_at = S_MATCHED, now
     db.commit()
+    if became_matched:
+        history.record_status(donation.id, S_LISTED, S_MATCHED, note=f"top score {matches[0].score}")
+        search.update_status(donation.id, S_MATCHED)
     if log:
         if matches:
             top = db.get(NGO, matches[0].ngo_id)

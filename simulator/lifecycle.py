@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 from app import db as dbmod
 from app.constants import S_ACCEPTED, S_DELIVERED, S_LISTED, S_MATCHED, S_PICKED_UP
 from app.models import Donation, Match
-from app.services import workflow
+from app.services import history, search, workflow
 from app.services.matching import match_donation
 from app.utils import utcnow
 
@@ -28,9 +28,15 @@ def tick(speed: float = 1.0, now: datetime | None = None) -> int:
     now = now or utcnow()
     moved = 0
     with dbmod.SessionLocal() as db:
-        db.execute(update(Donation).where(Donation.status.in_([S_LISTED, S_MATCHED]), Donation.expiry_time <= now)
-                   .values(status="expired", status_changed_at=now))
-        db.commit()
+        stale = db.execute(select(Donation.id, Donation.status).where(
+            Donation.status.in_([S_LISTED, S_MATCHED]), Donation.expiry_time <= now)).all()
+        if stale:
+            db.execute(update(Donation).where(Donation.id.in_([i for i, _ in stale]))
+                       .values(status="expired", status_changed_at=now))
+            db.commit()
+            for did, old in stale:
+                history.record_status(did, old, "expired", note="expiry sweep", flush=False)
+                search.update_status(did, "expired")
         rows = db.scalars(select(Donation).where(
             Donation.source == "sim", Donation.status.in_([S_MATCHED, S_ACCEPTED, S_PICKED_UP])).limit(600)).all()
         for d in rows:
@@ -43,7 +49,7 @@ def tick(speed: float = 1.0, now: datetime | None = None) -> int:
                                     .order_by(Match.rank)).all()
                     for m in ms:
                         try:
-                            workflow.accept_match(db, m.id, None, actor="simulated NGO")
+                            workflow.accept_match(db, m.id, None, actor="simulated NGO", flush=False)
                             moved += 1
                             break
                         except workflow.WorkflowError:
@@ -52,16 +58,17 @@ def tick(speed: float = 1.0, now: datetime | None = None) -> int:
                         workflow.reopen_for_matching(db, d)
                         match_donation(db, d.id, log=False)
                 elif d.status == S_ACCEPTED:
-                    workflow.advance_status(db, d.id, S_PICKED_UP)
+                    workflow.advance_status(db, d.id, S_PICKED_UP, flush=False)
                     moved += 1
                 elif d.status == S_PICKED_UP:
-                    workflow.advance_status(db, d.id, S_DELIVERED)
+                    workflow.advance_status(db, d.id, S_DELIVERED, flush=False)
                     moved += 1
             except workflow.WorkflowError:
                 db.rollback()
             except Exception:
                 db.rollback()
                 log.exception("lifecycle step failed for donation %s", d.id)
+    history.flush_status()
     return moved
 
 
