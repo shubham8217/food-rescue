@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../api.js'
+import { api, uploadFile } from '../api.js'
 import { AREAS, CATEGORIES, Steps, fmtTime, label, timeLeft, usePolling } from '../components/bits.jsx'
 
 const localInput = (d) => {
@@ -34,6 +34,19 @@ export default function Donor() {
     } finally {
       setBusy(false)
     }
+  }
+
+  const [up, setUp] = useState(null)
+  const upload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUp({ busy: true })
+    try {
+      const r = await uploadFile('/ingest/batch', file)
+      setUp({ ok: true, r })
+      reload()
+    } catch (ex) { setUp({ ok: false, text: ex.message }) }
   }
 
   const toggle = async (id) => {
@@ -72,6 +85,19 @@ export default function Donor() {
           {msg && <div className={`alert ${msg.ok ? 'ok' : 'error'}`} role="alert">{msg.text}</div>}
           <button className="btn primary" disabled={busy}>{busy ? 'Listing…' : 'List donation'}</button>
         </form>
+        <div className="uploadbox">
+          <b>Have many items? Upload a CSV or JSON file</b>
+          <div className="muted small">Columns: food_type, category, quantity_kg, expiry_time, area (org_name is filled in for you)</div>
+          <input type="file" accept=".csv,.json" onChange={upload} aria-label="Upload CSV" />
+          {up?.busy && <div className="muted small">Uploading…</div>}
+          {up?.ok && (
+            <div className="alert ok">
+              {up.r.accepted_donations} donation(s) accepted, {up.r.rejected_rows} rejected.
+              {up.r.rejected.slice(0, 3).map((x) => <div key={x.row_number} className="small">row {x.row_number}: {x.reason}</div>)}
+            </div>
+          )}
+          {up && up.ok === false && <div className="alert error">{up.text}</div>}
+        </div>
       </section>
 
       <section className="card">

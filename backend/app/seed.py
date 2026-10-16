@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.constants import ROLE_ADMIN, ROLE_DONOR, ROLE_NGO
 from app.geo import AREAS
 from app.models import NGO, Donor, Request, User
@@ -35,7 +36,19 @@ def _standing_request(db: Session, ngo: NGO) -> None:
                        standing=True, source="seed"))
 
 
+def seed_production_admin(db: Session) -> None:
+    """Production: no demo accounts. A single admin from ADMIN_EMAIL / ADMIN_PASSWORD."""
+    if len(settings.admin_password) < 12:
+        raise RuntimeError("Set ADMIN_PASSWORD (at least 12 characters) when SEED_DEMO_USERS=false")
+    email = settings.admin_email.strip().lower()
+    if db.scalar(select(User).where(User.email == email)) is None:
+        db.add(User(email=email, name="Administrator", role=ROLE_ADMIN, password_hash=hash_password(settings.admin_password)))
+        db.commit()
+
+
 def seed(db: Session) -> None:
+    if not settings.seed_demo_users:
+        return seed_production_admin(db)
     _user(db, "admin@foodrescue.demo", "Demo Admin", ROLE_ADMIN)
     donor_user = _user(db, "donor@foodrescue.demo", "Demo Donor", ROLE_DONOR)
     ngo_user = _user(db, "ngo@foodrescue.demo", "Demo NGO", ROLE_NGO)

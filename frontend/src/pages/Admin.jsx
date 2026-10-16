@@ -6,7 +6,7 @@ import { STATUSES, STATUS_COLOR, label } from '../components/bits.jsx'
 const EMPTY = {
   demo: { state: 'idle', running: false, speed: 1, batch_no: 0, total_batches: 20, next_batch_in: 0 },
   stats: { batches: 0, accepted_rows: 0, rejected_rows: 0, matches: 0, kg_rescued: 0, meals: 0, kg_in_flight: 0, donations_by_status: {}, total_donations: 0 },
-  pins: [], rejected: [], events: [],
+  pins: [], ngos: [], rejected: [], events: [],
 }
 
 /** WebSocket first; if it fails or drops, fall back to polling /admin/live and retry the socket. */
@@ -53,7 +53,7 @@ const Counter = ({ title, value, hint, tone }) => (
 
 export default function Admin() {
   const { data, events, mode } = useLive()
-  const { demo, stats, pins, rejected } = data
+  const { demo, stats, pins, ngos, rejected } = data
   const [speed, setSpeed] = useState(1)
   const [hour, setHour] = useState('')
   const [reset, setReset] = useState(true)
@@ -130,7 +130,7 @@ export default function Admin() {
       <div className="grid two">
         <section className="card">
           <h2>Donation map</h2>
-          <MapView pins={pins} />
+          <MapView pins={pins} ngos={ngos || []} />
         </section>
         <section className="card">
           <h2>Live event log</h2>

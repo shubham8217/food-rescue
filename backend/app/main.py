@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -21,9 +21,10 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Refusing to start in production with a weak/default JWT_SECRET")
     with dbmod.SessionLocal() as s:
         seed(s)
-    task = asyncio.create_task(lifecycle_loop())
+    task = asyncio.create_task(lifecycle_loop()) if settings.demo_enabled else None
     yield
-    task.cancel()
+    if task:
+        task.cancel()
 
 
 app = FastAPI(title="FoodRescue API", version="1.0.0", lifespan=lifespan,

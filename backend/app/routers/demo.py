@@ -6,6 +6,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app import db as dbmod
+from app.config import settings
 from app.constants import ROLE_ADMIN
 from app.db import get_db
 from app.deps import require_roles
@@ -19,6 +20,11 @@ router = APIRouter(tags=["demo"])
 admin_only = require_roles(ROLE_ADMIN)
 
 
+def _demo_on():
+    if not settings.demo_enabled:
+        raise HTTPException(404, "The live demo is disabled in this environment (DEMO_ENABLED=false)")
+
+
 @router.get("/demo/status")
 def demo_status(user: User = Depends(admin_only)):
     return runner.status()
@@ -26,6 +32,7 @@ def demo_status(user: User = Depends(admin_only)):
 
 @router.post("/demo/start")
 async def demo_start(body: DemoStartIn | None = None, user: User = Depends(admin_only)):
+    _demo_on()
     body = body or DemoStartIn()
     if body.speed not in (1, 2, 5):
         raise HTTPException(422, "speed must be 1, 2 or 5")
@@ -53,6 +60,7 @@ def demo_speed(body: SpeedIn, user: User = Depends(admin_only)):
 
 @router.post("/demo/reset")
 def demo_reset(user: User = Depends(admin_only), db: Session = Depends(get_db)):
+    _demo_on()
     if runner.running:
         raise HTTPException(409, "Stop the demo before resetting")
     stats.reset_data(db)

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api.js'
+import SearchBox from '../components/SearchBox.jsx'
 import { CATEGORIES, ScoreBar, Steps, fmtTime, label, timeLeft, usePolling } from '../components/bits.jsx'
 
 export default function Ngo() {
@@ -15,6 +16,7 @@ export default function Ngo() {
     reloadM(); reloadP(); reloadR()
   }
   const accept = (m) => act(() => api(`/matches/${m.id}/accept`, { method: 'POST' }), `Accepted donation #${m.donation.id}. Arrange pickup.`)
+  const decline = (m) => act(() => api(`/matches/${m.id}/decline`, { method: 'POST' }), `Declined donation #${m.donation.id}. It stays available to other NGOs.`)
   const move = (d, status) => act(() => api(`/donations/${d.id}/status`, { method: 'PATCH', body: { status } }), `Donation #${d.id} marked ${label(status)}.`)
   const postReq = (e) => {
     e.preventDefault()
@@ -48,7 +50,10 @@ export default function Ngo() {
                   <span>📍 distance {m.distance_score.toFixed(2)}</span><span>⏳ urgency {m.urgency_score.toFixed(2)}</span>
                   <span>⚖️ fit {m.fit_score.toFixed(2)}</span><span className="muted">rank #{m.rank}</span>
                 </div>
-                <button className="btn primary small" onClick={() => accept(m)}>Accept donation</button>
+                <div className="btnrow">
+                  <button className="btn primary small" onClick={() => accept(m)}>Accept donation</button>
+                  <button className="btn small" onClick={() => decline(m)}>Decline</button>
+                </div>
               </div>
             ))}
           </div>
@@ -111,6 +116,7 @@ export default function Ngo() {
           </section>
         </div>
       </div>
+      <SearchBox />
     </>
   )
 }

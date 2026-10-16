@@ -5,5 +5,8 @@ __pycache__/
 node_modules/
 dist/
 data/inbox/*.csv
-screenshots/
 .venv/
+data/delta/
+data/archive/
+data/nifi-failed/
+video/_work/

@@ -1,0 +1,120 @@
+# FoodRescue - production-style stack (single host).  Usage:
+#   Copy-Item .env.prod.example .env.prod   # then fill in every value
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Differences from the dev compose: no database / broker ports on the host, mandatory secrets, restart
+# policies, resource limits, HTTPS reverse proxy (Caddy), no demo accounts, simulator disabled.
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  MONGO_URL: mongodb://mongo:27017
+  MONGO_DB: foodrescue
+  RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672/
+  RABBITMQ_API_URL: http://rabbitmq:15672
+  RABBITMQ_API_USER: ${RABBITMQ_USER}
+  RABBITMQ_API_PASSWORD: ${RABBITMQ_PASSWORD}
+  APP_ENV: production
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (32+ random chars)}
+  INGEST_API_KEY: ${INGEST_API_KEY:?set INGEST_API_KEY}
+  DEMO_ENABLED: "false"
+  SEED_DEMO_USERS: "false"
+  ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD (12+ chars)}
+  CORS_ORIGINS: https://${DOMAIN:-localhost}
+  DELTA_DIR: /data/delta
+  INBOX_DIR: /data/inbox
+  ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy: {resources: {limits: {memory: 1g}}}
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes: [mongodata:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    deploy: {resources: {limits: {memory: 1g}}}
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes: [rabbitdata:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    deploy: {resources: {limits: {memory: 768m}}}
+
+  backend:
+    build: {context: ., dockerfile: backend/Dockerfile}
+    restart: unless-stopped
+    environment: *backend-env
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+    volumes: [deltadata:/data/delta]
+    depends_on:
+      postgres: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    deploy: {resources: {limits: {memory: 1g}}}
+
+  worker:
+    build: {context: ., dockerfile: backend/Dockerfile}
+    restart: unless-stopped
+    environment: *backend-env
+    command: python -m app.worker.consumer
+    volumes: [deltadata:/data/delta]
+    depends_on:
+      backend: {condition: service_healthy}
+    deploy: {resources: {limits: {memory: 512m}}}
+
+  frontend:
+    build: {context: ./frontend}
+    restart: unless-stopped
+    depends_on:
+      backend: {condition: service_healthy}
+    deploy: {resources: {limits: {memory: 128m}}}
+
+  caddy:
+    # HTTPS in front of everything. DOMAIN=localhost uses Caddy's local CA; a real domain gets Let's Encrypt.
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on: [frontend]
+
+volumes:
+  pgdata:
+  mongodata:
+  rabbitdata:
+  deltadata:
+  caddydata:

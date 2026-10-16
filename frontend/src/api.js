@@ -26,6 +26,17 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data
 }
 
+/** Upload a CSV / JSON file to POST /ingest/batch (multipart). */
+export async function uploadFile(path, file) {
+  const auth = loadAuth()
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch(BASE + path, { method: 'POST', headers: auth ? { Authorization: `Bearer ${auth.access_token}` } : {}, body })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : `Upload failed (${res.status})`)
+  return data
+}
+
 export const wsUrl = (token) => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return `${proto}://${window.location.host}${BASE}/ws/live?token=${encodeURIComponent(token)}`

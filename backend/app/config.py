@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     rabbitmq_api_url: str = "http://localhost:15672"
     rabbitmq_api_user: str = "guest"
     rabbitmq_api_password: str = "guest"
+    demo_enabled: bool = True  # live-demo simulator + reset; off in production
+    seed_demo_users: bool = True  # demo accounts / NGOs with a known password; off in production
+    admin_email: str = "admin@foodrescue.demo"
+    admin_password: str = ""  # used for the admin when seed_demo_users is false (min 12 chars)
     nifi_url: str = ""
     airflow_url: str = ""
 

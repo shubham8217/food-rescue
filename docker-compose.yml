@@ -1,21 +1,41 @@
 # FoodRescue - local stack.
-# Profiles: core (this build), search / pipeline (reserved for upcoming components), all.
+#
+# Profiles:
+#   core      postgres, mongo, rabbitmq, backend, worker, frontend        (always the base)
+#   pipeline  + Apache NiFi (file ingestion) and Apache Airflow (scheduled jobs)
+#   search    + Elasticsearch
+#   all       everything
+#
 # `.env` sets COMPOSE_PROFILES=core so a plain `docker compose up` starts the core stack.
+# To run everything:  ./scripts/up-all.ps1   (sets the URLs the backend needs and starts all profiles)
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-foodrescue}:${POSTGRES_PASSWORD:-foodrescue}@postgres:5432/${POSTGRES_DB:-foodrescue}
   MONGO_URL: mongodb://mongo:27017
   MONGO_DB: foodrescue
   RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+  RABBITMQ_API_URL: http://rabbitmq:15672
+  RABBITMQ_API_USER: ${RABBITMQ_USER:-guest}
+  RABBITMQ_API_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
   JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-please-32-bytes-min}
+  APP_ENV: ${APP_ENV:-development}
+  DEMO_ENABLED: ${DEMO_ENABLED:-true}
+  SEED_DEMO_USERS: ${SEED_DEMO_USERS:-true}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@foodrescue.demo}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  INGEST_API_KEY: ${INGEST_API_KEY:-dev-ingest-key-change-me}
   INBOX_DIR: /data/inbox
+  DELTA_DIR: /data/delta
   API_INTERNAL_URL: http://127.0.0.1:8000
   SIM_DIRECT_INGEST: ${SIM_DIRECT_INGEST:-true}
+  ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-}
+  NIFI_URL: ${NIFI_URL:-}
+  AIRFLOW_URL: ${AIRFLOW_URL:-}
 
 services:
   postgres:
     image: postgres:16-alpine
-    profiles: [core, all]
+    profiles: [core, pipeline, search, all]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-foodrescue}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-foodrescue}
@@ -30,7 +50,7 @@ services:
 
   mongo:
     image: mongo:7
-    profiles: [core, all]
+    profiles: [core, pipeline, search, all]
     ports: ["${MONGO_PORT:-27017}:27017"]
     volumes: [mongodata:/data/db]
     healthcheck:
@@ -41,7 +61,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management
-    profiles: [core, all]
+    profiles: [core, pipeline, search, all]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
@@ -56,12 +76,13 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    profiles: [core, all]
+    profiles: [core, pipeline, search, all]
     environment: *backend-env
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports: ["8000:8000"]
     volumes:
       - ./data/inbox:/data/inbox
+      - ./data/delta:/data/delta
     depends_on:
       postgres: {condition: service_healthy}
       mongo: {condition: service_healthy}
@@ -76,9 +97,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    profiles: [core, all]
+    profiles: [core, pipeline, search, all]
     environment: *backend-env
     command: python -m app.worker.consumer
+    volumes:
+      - ./data/delta:/data/delta
     depends_on:
       backend: {condition: service_healthy}
     restart: unless-stopped
@@ -86,16 +109,92 @@ services:
   frontend:
     build:
       context: ./frontend
-    profiles: [core, all]
+    profiles: [core, pipeline, search, all]
     ports: ["5173:80"]
     depends_on:
       backend: {condition: service_healthy}
 
-  # ---- Not built yet ----
-  # nifi:          profile [pipeline, all]  - watches ./data/inbox, posts to backend /ingest/batch
-  # airflow:       profile [pipeline, all]  - DAGs: delta snapshots, analytics refresh
-  # elasticsearch: profile [search, all]    - donation/NGO search index
+  # ---------------- pipeline profile: NiFi + Airflow ----------------
+  nifi:
+    image: apache/nifi:1.28.1
+    profiles: [pipeline, all]
+    environment:
+      NIFI_WEB_HTTP_PORT: "8080"          # plain HTTP, local demo only
+      NIFI_JVM_HEAP_INIT: 512m
+      NIFI_JVM_HEAP_MAX: 768m
+    ports: ["8080:8080"]
+    volumes:
+      - ./data/inbox:/data/inbox
+      - ./data/archive:/data/archive
+      - ./data/nifi-failed:/data/failed
+      - nifidata:/opt/nifi/nifi-current/conf
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/nifi-api/flow/about || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+
+  nifi-init:
+    # one-shot: builds the ingest flow in NiFi through its REST API (idempotent)
+    image: python:3.12-slim
+    profiles: [pipeline, all]
+    environment:
+      NIFI_API: http://nifi:8080/nifi-api
+      BACKEND_URL: http://backend:8000
+      INGEST_API_KEY: ${INGEST_API_KEY:-dev-ingest-key-change-me}
+    volumes: ["./nifi:/nifi:ro"]
+    command: python /nifi/deploy_flow.py
+    depends_on:
+      nifi: {condition: service_healthy}
+    restart: "no"
+
+  airflow:
+    image: apache/airflow:2.9.3
+    profiles: [pipeline, all]
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      FR_API_URL: http://backend:8000
+      FR_API_KEY: ${INGEST_API_KEY:-dev-ingest-key-change-me}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-foodrescue123}
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD} --firstname Food --lastname Rescue --role Admin --email admin@foodrescue.demo || true;
+      airflow scheduler & exec airflow webserver --port 8080"
+    ports: ["8081:8080"]
+    volumes: ["./airflow/dags:/opt/airflow/dags:ro"]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # ---------------- search profile: Elasticsearch ----------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    profiles: [search, all]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: [esdata:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
 
 volumes:
   pgdata:
   mongodata:
+  esdata:
+  nifidata:
